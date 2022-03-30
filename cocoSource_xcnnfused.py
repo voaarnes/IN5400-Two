@@ -20,16 +20,27 @@ class ImageCaptionModel(nn.Module):
         self.cell_type = config['cellType']
 
         # Create the network layers
-        self.embedding_layer = nn.Embedding(self.vocabulary_size, self.embedding_size)
+        self.embedding_layer = nn.Embedding(
+            self.vocabulary_size, self.embedding_size)
         # TODO: The output layer (final layer) is a linear layer. What should be the size (dimensions) of its output?
         #         Replace None with a linear layer with correct output size
-        self.output_layer = None  # nn.Linear(self.hidden_state_sizes, )
-        self.nn_map_size = 512  # The output size for the image features after the processing via self.inputLayer
+        #self.output_layer = None  # nn.Linear(self.hidden_state_sizes, )
+        self.output_layer = nn.Linear(
+            self.hidden_state_sizes, self.vocabulary_size)
+
+        # The output size for the image features after the processing via self.inputLayer
+        self.nn_map_size = 512
         # TODO: Check the task description and replace None with the correct input layer
-        self.input_layer = None
+        #self.input_layer = None
+        self.input_layer = nn.Sequential(
+                                nn.Dropout(0.25),
+                                nn.linear(self.embedding_size,
+                                          self.self.nn_map_size),
+                                nn.LeakyReLU()
+                            )
 
         self.simplified_rnn = True
-        
+
         if self.simplified_rnn:
             # Simplified one layer RNN is used for task 1 only.
             if self.cell_type != 'RNN':
@@ -64,6 +75,9 @@ class ImageCaptionModel(nn.Module):
             # TODO: Initialize initial_hidden_state with correct dimensions depending on the cell type.
             # The shape of the hidden state here should be [num_rnn_layers, batch_size, hidden_state_sizes].
             # Remember that each rnn cell needs its own initial state.
+            tahnInput = torch.tahn(self.input_layer(cnn_features))
+            initial_hidden_state = tahnInput.repeat(
+                repeats=(self.num_rnn_layers, 1, 1))
             initial_hidden_state = None
         else:
             initial_hidden_state = current_hidden_state
@@ -86,7 +100,7 @@ class RNNOneLayerSimplified(nn.Module):
 
         self.cells = nn.ModuleList(
             [RNNsimpleCell(hidden_state_size=self.hidden_state_size, input_size=self.input_size)])
-        
+
     def forward(self, tokens, processed_cnn_features, initial_hidden_state, output_layer: nn.Linear,
                 embedding_layer: nn.Embedding, is_train=True) -> tuple:
         """
@@ -106,12 +120,14 @@ class RNNOneLayerSimplified(nn.Module):
                  hidden layer's shape = [num_rnn_layers, batch_size, hidden_state_sizes]
         """
         if is_train:
-            sequence_length = tokens.shape[1]  # Truncated backpropagation length
+            # Truncated backpropagation length
+            sequence_length = tokens.shape[1]
         else:
             sequence_length = 40  # Max sequence length to be generated
-            
+
         # Get embeddings for the whole sequence
-        embeddings = embedding_layer(input=tokens)  # Should have shape (batch_size, sequence_length, embedding_size)
+        # Should have shape (batch_size, sequence_length, embedding_size)
+        embeddings = embedding_layer(input=tokens)
 
         logits_sequence = []
         current_hidden_state = initial_hidden_state
@@ -147,7 +163,8 @@ class RNNOneLayerSimplified(nn.Module):
                 else:
                     input_tokens = embedding_layer(predictions)
 
-        logits = torch.stack(logits_sequence, dim=1)  # Convert the sequence of logits to a tensor
+        # Convert the sequence of logits to a tensor
+        logits = torch.stack(logits_sequence, dim=1)
 
         return logits, current_hidden_state
 
@@ -193,12 +210,14 @@ class RNN(nn.Module):
                  hidden layer's shape = [num_rnn_layers, batch_size, hidden_state_sizes]
         """
         if is_train:
-            sequence_length = tokens.shape[1]  # Truncated backpropagation length
+            # Truncated backpropagation length
+            sequence_length = tokens.shape[1]
         else:
             sequence_length = 40  # Max sequence length to generate
 
         # Get embeddings for the whole sequence
-        embeddings = embedding_layer(input=tokens)  # Should have shape (batch_size, sequence_length, embedding_size)
+        # Should have shape (batch_size, sequence_length, embedding_size)
+        embeddings = embedding_layer(input=tokens)
 
         logits_sequence = []
         current_hidden_state = initial_hidden_state
@@ -207,7 +226,7 @@ class RNN(nn.Module):
         input_tokens = None  # Should have shape (batch_size, embedding_size)
         for i in range(sequence_length):
             current_hidden_state = torch.zeros_like(current_hidden_state)
-            
+
             # TODO:
             # 1. Loop over the RNN layers and provide them with correct input. Inputs depend on the layer
             #    index so input for layer-0 will be different from the input for other layers.
@@ -223,7 +242,8 @@ class RNN(nn.Module):
                     # TODO: Compute predictions above and use them here by replacing None with the code in comment
                     input_tokens = None  # embedding_layer(predictions)
 
-        logits = torch.stack(logits_sequence, dim=1)  # Convert the sequence of logits to a tensor
+        # Convert the sequence of logits to a tensor
+        logits = torch.stack(logits_sequence, dim=1)
 
         return logits, current_hidden_state
 
@@ -284,7 +304,7 @@ class RNNsimpleCell(nn.Module):
             self.weight: A nn.Parameter with shape [hidden_state_sizes + input_size, hidden_state_sizes]. Initialized
                          using variance scaling with zero mean.
 
-            self.bias: A nn.Parameter with shape [1, hidden_state_sizes]. Initialized to zero. 
+            self.bias: A nn.Parameter with shape [1, hidden_state_sizes]. Initialized to zero.
 
         Tips:
             Variance scaling:  Var[W] = 1/n
@@ -362,7 +382,7 @@ class LSTMCell(nn.Module):
         #       new cell state.
         new_hidden_state = None
         return new_hidden_state
-        
+
 
 ######################################################################################################################
 
@@ -409,5 +429,3 @@ def loss_fn(logits, y_tokens, y_weights):
 #
 #     sumLoss, meanLoss = loss_fn(logits, yTokens, yWeights)
 #
-
-
